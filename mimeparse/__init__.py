@@ -1,8 +1,12 @@
+from __future__ import annotations
+
 __version__ = '2.0.0'
 __author__ = 'Joe Gregorio'
 __email__ = 'joe@bitworking.org'
 __license__ = 'MIT License'
 __credits__ = ''
+
+from typing import Dict, Generator, Iterable, Tuple, Union
 
 
 class MimeTypeParseException(ValueError):
@@ -11,7 +15,7 @@ class MimeTypeParseException(ValueError):
 
 # Vendored version of cgi._parseparam from Python 3.11 (deprecated and slated
 # for removal in 3.13)
-def _parseparam(s):
+def _parseparam(s: str) -> Generator[str, None, None]:
     while s[:1] == ';':
         s = s[1:]
         end = s.find(';')
@@ -26,7 +30,7 @@ def _parseparam(s):
 
 # Vendored version of cgi.parse_header from Python 3.11 (deprecated and slated
 # for removal in 3.13)
-def _parse_header(line):
+def _parse_header(line: str) -> Tuple[str, Dict[str, str]]:
     """Parse a Content-type like header.
 
     Return the main content-type and a dictionary of options.
@@ -47,7 +51,7 @@ def _parse_header(line):
     return key, pdict
 
 
-def parse_mime_type(mime_type):
+def parse_mime_type(mime_type: str) -> Tuple[str, str, Dict[str, str]]:
     """Parses a mime-type into its component parts.
 
     Carves up a mime-type and returns a tuple of the (type, subtype, params)
@@ -56,8 +60,6 @@ def parse_mime_type(mime_type):
     into:
 
        ('application', 'xhtml', {'q', '0.5'})
-
-    :rtype: (str,str,dict)
     """
     full_type, params = _parse_header(mime_type)
     # Java URLConnection class sends an Accept header that includes a
@@ -75,7 +77,7 @@ def parse_mime_type(mime_type):
     return (type.strip(), subtype.strip(), params)
 
 
-def parse_media_range(range):
+def parse_media_range(range: str) -> Tuple[str, str, Dict[str, str]]:
     """Parse a media-range into its component parts.
 
     Carves up a media range and returns a tuple of the (type, subtype,
@@ -88,11 +90,9 @@ def parse_media_range(range):
     In addition this function also guarantees that there is a value for 'q'
     in the params dictionary, filling it in with a proper default if
     necessary.
-
-    :rtype: (str,str,dict)
     """
     (type, subtype, params) = parse_mime_type(range)
-    params.setdefault('q', params.pop('Q', None))  # q is case insensitive
+    params.setdefault('q', params.pop('Q', '1'))  # q is case insensitive
     try:
         if not params['q'] or not 0 <= float(params['q']) <= 1:
             params['q'] = '1'
@@ -102,7 +102,10 @@ def parse_media_range(range):
     return (type, subtype, params)
 
 
-def quality_and_fitness_parsed(mime_type, parsed_ranges):
+def quality_and_fitness_parsed(
+    mime_type: str,
+    parsed_ranges: Iterable[Tuple[str, str, Dict[str, str]]],
+) -> Tuple[float, float]:
     """Find the best match for a mime-type amongst parsed media-ranges.
 
     Find the best match for a given mime-type against a list of media_ranges
@@ -110,11 +113,9 @@ def quality_and_fitness_parsed(mime_type, parsed_ranges):
     the fitness value and the value of the 'q' quality parameter of the best
     match, or (-1, 0) if no match was found. Just as for quality_parsed(),
     'parsed_ranges' must be a list of parsed media ranges.
-
-    :rtype: (float,int)
     """
-    best_fitness = -1
-    best_fit_q = 0
+    best_fitness = -1.
+    best_fit_q: Union[float, str] = 0.
     (target_type, target_subtype, target_params) = \
         parse_media_range(mime_type)
 
@@ -129,10 +130,10 @@ def quality_and_fitness_parsed(mime_type, parsed_ranges):
         if type_match and subtype_match:
 
             # 100 points if the type matches w/o a wildcard
-            fitness = type == target_type and 100 or 0
+            fitness = type == target_type and 100. or 0.
 
             # 10 points if the subtype matches w/o a wildcard
-            fitness += subtype == target_subtype and 10 or 0
+            fitness += subtype == target_subtype and 10. or 0.
 
             # 1 bonus point for each matching param besides "q"
             param_matches = sum([
@@ -151,7 +152,7 @@ def quality_and_fitness_parsed(mime_type, parsed_ranges):
     return float(best_fit_q), best_fitness
 
 
-def quality_parsed(mime_type, parsed_ranges):
+def quality_parsed(mime_type: str, parsed_ranges: Iterable[Tuple[str, str, Dict[str, str]]]) -> float:
     """Find the best match for a mime-type amongst parsed media-ranges.
 
     Find the best match for a given mime-type against a list of media_ranges
@@ -159,31 +160,27 @@ def quality_parsed(mime_type, parsed_ranges):
     quality parameter of the best match, 0 if no match was found. This function
     behaves the same as quality() except that 'parsed_ranges' must be a list of
     parsed media ranges.
-
-    :rtype: float
     """
 
     return quality_and_fitness_parsed(mime_type, parsed_ranges)[0]
 
 
-def quality(mime_type, ranges):
+def quality(mime_type: str, ranges: str) -> float:
     """Return the quality ('q') of a mime-type against a list of media-ranges.
 
     Returns the quality 'q' of a mime-type when compared against the
     media-ranges in ranges. For example:
 
-    >>> quality('text/html','text/*;q=0.3, text/html;q=0.7,
+    >>> quality('text/html','text/*;q=0.3, text/html;q=0.7',
                   text/html;level=1, text/html;level=2;q=0.4, */*;q=0.5')
     0.7
-
-    :rtype: float
     """
     parsed_ranges = [parse_media_range(r) for r in ranges.split(',')]
 
     return quality_parsed(mime_type, parsed_ranges)
 
 
-def best_match(supported, header):
+def best_match(supported: Iterable[str], header: str) -> str:
     """Return mime-type with the highest quality ('q') from list of candidates.
 
     Takes a list of supported mime-types and finds the best match for all the
@@ -196,8 +193,6 @@ def best_match(supported, header):
     >>> best_match(['application/xbel+xml', 'text/xml'],
                    'text/*;q=0.5,*/*; q=0.1')
     'text/xml'
-
-    :rtype: str
     """
     split_header = _filter_blank(header.split(','))
     parsed_header = [parse_media_range(r) for r in split_header]
@@ -215,7 +210,7 @@ def best_match(supported, header):
     return weighted_matches[-1][0][0] and weighted_matches[-1][2] or ''
 
 
-def _filter_blank(i):
+def _filter_blank(i: Iterable[str]) -> Generator[str, None, None]:
     """Return all non-empty items in the list."""
     for s in i:
         if s.strip():
